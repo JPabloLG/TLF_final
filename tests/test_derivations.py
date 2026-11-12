@@ -1,12 +1,20 @@
-"""Tests for the leftmost/rightmost derivations, the x86 semantic warnings and the CLI exit codes."""
+"""Tests for the derivations (full and partial), the tree layout and PNG export, the semantic warnings and the CLI."""
 
 import contextlib
 import io
+import tempfile
 import unittest
+from pathlib import Path
 
-from analyzer.derivations import format_derivation, leftmost_derivation, rightmost_derivation
+from analyzer.derivations import (
+    format_derivation,
+    leftmost_derivation,
+    partial_leftmost_derivation,
+    rightmost_derivation,
+)
+from analyzer.gui.tree_canvas import compute_layout, export_png, production_text
 from analyzer.parse_tree import Node
-from analyzer.parser import RecursiveDescentParser
+from analyzer.parser import RecursiveDescentParser, analyze
 from analyzer.semantic import effective_address_summary, memory_operands, semantic_warnings
 from main import main
 
@@ -56,6 +64,58 @@ class DerivationTests(unittest.TestCase):
         self.assertEqual(leftmost_derivation(parse("mov rax , 5"))[-1].sentential_form, ["MOV", "RAX", ",", "5"])
 
 
+    def test_partial_equals_full_when_valid(self) -> None:
+        for text in (W1, W2, W_A, "mov rax , 5"):
+            with self.subTest(text=text):
+                result = analyze(text.split())
+                self.assertEqual(partial_leftmost_derivation(result.applied_rules, result.tokens),
+                                 leftmost_derivation(result.tree))
+
+    def test_partial_until_error(self) -> None:
+        result = analyze("MOV [ RAX ] , [ RBX ]".split())
+        steps = partial_leftmost_derivation(result.applied_rules, result.tokens)
+        self.assertEqual(steps[-1].sentential_form, "MOV [ RAX ] , FMEM RESTO".split())
+        self.assertFalse(format_derivation(steps, complete=False).endswith("∎"))
+        unmatched = partial_leftmost_derivation(analyze(["foo", "x"]).applied_rules, ["foo", "x"])
+        self.assertEqual(unmatched[-1].sentential_form, ["foo", ":", "RESTO"])
+
+
+class TreeLayoutTests(unittest.TestCase):
+    """Pure tree layout, tooltip text and PNG export."""
+
+    def test_no_overlap_per_level(self) -> None:
+        for text in (W1, W2, W_A):
+            for show_epsilon in (True, False):
+                with self.subTest(text=text, show_epsilon=show_epsilon):
+                    levels: dict[float, list] = {}
+                    for box in compute_layout(parse(text), show_epsilon).values():
+                        levels.setdefault(box.y, []).append(box)
+                    for boxes in levels.values():
+                        boxes.sort(key=lambda b: b.x)
+                        for left, right in zip(boxes, boxes[1:]):
+                            self.assertLessEqual(left.x + left.width, right.x)
+
+    def test_layout_rules(self) -> None:
+        tree = parse(W_A)
+        boxes = compute_layout(tree)
+        self.assertEqual(len(boxes), tree.count_nodes())
+        self.assertEqual(boxes[tree.id].y, 32)
+        self.assertTrue(all(b.width >= 48 for b in boxes.values()))
+        first, last = boxes[tree.children[0].id], boxes[tree.children[-1].id]
+        self.assertAlmostEqual(boxes[tree.id].center_x, (first.center_x + last.center_x) / 2)
+        self.assertLess(len(compute_layout(tree, show_epsilon=False)), len(boxes))
+
+    def test_production_text(self) -> None:
+        term = next(n for n in parse(W1).iter_preorder() if n.rule == "R28")
+        self.assertEqual(production_text(term), "R28: TERM → IDX ESC")
+
+    def test_export_png(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "arbol.png"
+            export_png(parse(W_A), str(path))
+            self.assertEqual(path.read_bytes()[1:4], b"PNG")
+
+
 class SemanticTests(unittest.TestCase):
     """Effective-address summaries and architecture warnings."""
 
@@ -101,6 +161,12 @@ class CliTests(unittest.TestCase):
         self.assertEqual(self.run_main("--list", "['JMP', 'inicio']"), 0)
         self.assertEqual(self.run_main("--list", "['JMP', 5]"), 1)
         self.assertEqual(self.run_main("--examples"), 0)
+
+    def test_export_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "w2.png"
+            self.assertEqual(self.run_main("--cli", W2, "--export-tree", str(path)), 0)
+            self.assertTrue(path.exists())
 
 
 if __name__ == "__main__":

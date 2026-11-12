@@ -6,6 +6,7 @@ Usage:
     python main.py --list "['MOV', 'RAX', ',', '5']"
     python main.py --examples              -> w1, w2, w_a and w3
 Derivation options: --leftmost, --rightmost or --both (default).
+With --cli or --list, ``--export-tree arbol.png`` also saves the parse tree as a PNG.
 """
 
 import argparse
@@ -14,14 +15,14 @@ import sys
 from analyzer.derivations import format_derivation, leftmost_derivation, rightmost_derivation
 from analyzer.grammar import REFERENCE_STRINGS
 from analyzer.input_reader import InputFormatError, read_tokens
-from analyzer.parser import analyze
+from analyzer.parser import AnalysisResult, analyze
 from analyzer.semantic import effective_address_summary, memory_operands, operand_text, semantic_warnings
 
 SEPARATOR = "═" * 70
 
 
-def report(tokens: list[str], mode: str) -> bool:
-    """Print the full analysis of ``tokens`` and return whether the string was accepted.
+def report(tokens: list[str], mode: str) -> AnalysisResult:
+    """Print the full analysis of ``tokens`` and return the analysis result.
 
     Args:
         tokens: Already delimited terminals.
@@ -33,7 +34,7 @@ def report(tokens: list[str], mode: str) -> bool:
     result = analyze(tokens)
     if not result.ok:
         print(f"\n✗ {result.error}")
-        return False
+        return result
 
     tree = result.tree
     print(f"\n✓ Cadena aceptada ({len(result.applied_rules)} reglas aplicadas, {result.elapsed_ms:.2f} ms).")
@@ -55,7 +56,7 @@ def report(tokens: list[str], mode: str) -> bool:
     print("\nAdvertencias de arquitectura:" if warnings else "\nSin advertencias de arquitectura.")
     for warning in warnings:
         print(f"  ⚠ (posición {warning.position}) {warning.message_es}")
-    return True
+    return result
 
 
 def launch_gui() -> int:
@@ -88,7 +89,10 @@ def main(argv: list[str] | None = None) -> int:
     order.add_argument("--rightmost", dest="mode", action="store_const", const="rightmost", help="solo derivación derecha")
     order.add_argument("--both", dest="mode", action="store_const", const="both", help="ambas derivaciones (por defecto)")
     parser.set_defaults(mode="both")
+    parser.add_argument("--export-tree", metavar="ARCHIVO.png", help="guarda el árbol como PNG (con --cli o --list)")
     args = parser.parse_args(argv)
+    if args.export_tree and args.cli is None and args.list is None:
+        parser.error("--export-tree requiere --cli o --list")
 
     if args.examples:
         for example in REFERENCE_STRINGS:
@@ -103,7 +107,19 @@ def main(argv: list[str] | None = None) -> int:
     except InputFormatError as exc:
         print(f"✗ Entrada inválida: {exc}")
         return 1
-    return 0 if report(tokens, args.mode) else 1
+    result = report(tokens, args.mode)
+    if not result.ok:
+        return 1
+    if args.export_tree:
+        from analyzer.gui.tree_canvas import export_png  # imports customtkinter only when exporting
+
+        try:
+            export_png(result.tree, args.export_tree)
+        except OSError as exc:
+            print(f"\n✗ No se pudo exportar el árbol: {exc}")
+            return 1
+        print(f"\nÁrbol exportado a {args.export_tree}")
+    return 0
 
 
 if __name__ == "__main__":
