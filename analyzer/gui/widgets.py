@@ -1,6 +1,8 @@
-"""Reusable interface widgets: cards, a wrapping flow container, token chips, the status banner and the color legend."""
+"""Reusable interface widgets: cards, a wrapping flow container, token chips, the status banner, the color legend and tooltips."""
 
+import tkinter as tk
 from collections.abc import Iterable
+from typing import Any
 
 import customtkinter as ctk
 
@@ -14,7 +16,7 @@ class Card(ctk.CTkFrame):
     can be gridded into the card at row 0, column 1 (right side of the title row).
     """
 
-    def __init__(self, master: ctk.CTkBaseClass, title: str, **kwargs) -> None:
+    def __init__(self, master: ctk.CTkBaseClass, title: str, **kwargs: Any) -> None:
         """Create the card with ``title``; extra ``kwargs`` go to CTkFrame."""
         super().__init__(
             master, fg_color=theme.CARD, border_color=theme.BORDER, border_width=1,
@@ -154,3 +156,45 @@ class Legend(FlowFrame):
                 font=theme.font(theme.SIZE_SMALL), width=0, height=0,
             ).pack(side="left")
             self.add(item)
+
+
+class Tooltip:
+    """Small help text that appears under a widget after the pointer rests on it for a moment."""
+
+    DELAY_MS = 500
+
+    def __init__(self, widget: ctk.CTkBaseClass, text: str) -> None:
+        """Attach a tooltip with ``text`` to ``widget`` (keeps the widget's own hover bindings)."""
+        self._widget = widget
+        self._text = text
+        self._window: tk.Toplevel | None = None
+        self._pending: str | None = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+        widget.bind("<ButtonPress>", self._hide, add="+")
+
+    def _schedule(self, _event: tk.Event) -> None:
+        self._cancel()
+        self._pending = self._widget.after(self.DELAY_MS, self._show)
+
+    def _cancel(self) -> None:
+        if self._pending is not None:
+            self._widget.after_cancel(self._pending)
+            self._pending = None
+
+    def _show(self) -> None:
+        self._pending = None
+        widget = self._widget
+        self._window = tk.Toplevel(widget)
+        self._window.wm_overrideredirect(True)
+        self._window.wm_geometry(f"+{widget.winfo_rootx()}+{widget.winfo_rooty() + widget.winfo_height() + 4}")
+        tk.Label(
+            self._window, text=self._text, bg=theme.CARD_ELEVATED, fg=theme.TEXT, padx=8, pady=4,
+            font=(theme.UI_FAMILY, -12), highlightthickness=1, highlightbackground=theme.BORDER,
+        ).pack()
+
+    def _hide(self, _event: tk.Event) -> None:
+        self._cancel()
+        if self._window is not None:
+            self._window.destroy()
+            self._window = None

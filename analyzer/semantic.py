@@ -32,6 +32,7 @@ class _Term:
 
     @property
     def is_register(self) -> bool:
+        """Whether the term is a register (IDX or PILA) rather than a ``num`` displacement."""
         return self.leaf.symbol != "num"
 
 

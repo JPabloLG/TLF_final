@@ -7,6 +7,7 @@ on the right (60 %), and a footer. All analysis goes through ``analyzer.parser.a
 
 from collections import Counter
 from functools import cache
+from typing import Any
 
 import customtkinter as ctk
 from PIL import Image, ImageDraw
@@ -117,7 +118,14 @@ class AsmAnalyzerApp(ctk.CTk):
         ).grid(row=2, column=0, pady=(0, theme.SPACE_S))
 
         self.bind("<Control-Return>", lambda _event: self.run_analysis())
+        self.bind("<Escape>", lambda _event: self.clear())
         self.reset()
+        # CTk focuses the root after creating its widgets; claim the focus once that settles.
+        self.after(100, self.input.focus_set)
+
+    def report_callback_exception(self, exc: type[BaseException], value: BaseException, tb: object) -> None:
+        """Show any unexpected error of an event handler in the banner instead of losing it (Tk hook)."""
+        self.banner.show("error", "No se pudo completar la acción", f"{exc.__name__}: {value}")
 
     # ----- construction --------------------------------------------------------
 
@@ -243,7 +251,7 @@ class AsmAnalyzerApp(ctk.CTk):
         self._build_grammar_tab(self.tabs.tab(TAB_GRAMMAR))
         self.tabs.set(TAB_TREE)
 
-    def _code_box(self, master: ctk.CTkBaseClass, **kwargs) -> ctk.CTkTextbox:
+    def _code_box(self, master: ctk.CTkBaseClass, **kwargs: Any) -> ctk.CTkTextbox:
         return ctk.CTkTextbox(
             master, font=theme.font(theme.SIZE_BODY, code=True), wrap="none", fg_color=theme.BACKGROUND,
             text_color=theme.TEXT, corner_radius=theme.RADIUS_BUTTON, state="disabled", **kwargs,

@@ -6,9 +6,10 @@ Gestalt: edges are drawn before the nodes so every child visibly hangs from its 
 """
 
 import tkinter as tk
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from tkinter import filedialog
+from typing import Any
 
 import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageFont
@@ -16,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 from analyzer import grammar
 from analyzer.derivations import display_symbol
 from analyzer.gui import theme
+from analyzer.gui.widgets import Tooltip
 from analyzer.parse_tree import Node
 
 NODE_HEIGHT = 32
@@ -85,9 +87,11 @@ def compute_layout(tree: Node, show_epsilon: bool = True) -> dict[int, NodeBox]:
     cursor = float(MARGIN)
 
     def width_of(node: Node) -> float:
+        """Estimated box width for the label of ``node``."""
         return max(MIN_WIDTH, len(node_label(node)) * CHAR_WIDTH + TEXT_PADDING)
 
     def place(node: Node, depth: int) -> None:
+        """Lay out the subtree of ``node`` starting at ``cursor`` (post-order)."""
         nonlocal cursor
         start = cursor
         width = width_of(node)
@@ -249,27 +253,36 @@ class TreeCanvas(ctk.CTkFrame):
         bar = ctk.CTkFrame(self, fg_color="transparent")
         bar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, theme.SPACE_S))
         self._buttons: list[ctk.CTkButton] = []
-        for column, (text, width, command) in enumerate((
-            ("Ajustar", 72, self.fit), ("−", 32, lambda: self.zoom(1 / ZOOM_STEP)), ("+", 32, lambda: self.zoom(ZOOM_STEP)),
+        for column, (text, width, command, tip) in enumerate((
+            ("Ajustar", 72, self.fit, "Encajar todo el árbol en la vista"),
+            ("−", 32, lambda: self.zoom(1 / ZOOM_STEP), "Alejar (Ctrl + rueda)"),
+            ("+", 32, lambda: self.zoom(ZOOM_STEP), "Acercar (Ctrl + rueda)"),
         )):
-            self._buttons.append(self._button(bar, text, width, command))
+            self._buttons.append(self._button(bar, text, width, command, tip))
             self._buttons[-1].grid(row=0, column=column, padx=(0, 4 if column else theme.SPACE_S))
-        ctk.CTkSwitch(
+        switch = ctk.CTkSwitch(
             bar, text="Mostrar ε", variable=self._show_epsilon, command=self._render, font=theme.font(theme.SIZE_SMALL),
             text_color=theme.TEXT_MUTED, progress_color=theme.ACCENT,
-        ).grid(row=0, column=3, padx=(theme.SPACE_M, 0))
+        )
+        switch.grid(row=0, column=3, padx=(theme.SPACE_M, 0))
+        Tooltip(switch, "Mostrar u ocultar las hojas ε (producciones vacías)")
         bar.grid_columnconfigure(4, weight=1)
-        for column, (text, command) in enumerate((("Exportar PNG", self._ask_png), ("Exportar texto", self._ask_text)), 5):
-            self._buttons.append(self._button(bar, text, 112, command))
+        for column, (text, command, tip) in enumerate((
+            ("Exportar PNG", self._ask_png, "Guardar el árbol como imagen para el informe (fondo blanco)"),
+            ("Exportar texto", self._ask_text, "Guardar la jerarquía del árbol en un archivo .txt"),
+        ), 5):
+            self._buttons.append(self._button(bar, text, 112, command, tip))
             self._buttons[-1].grid(row=0, column=column, padx=(theme.SPACE_S, 0))
 
     @staticmethod
-    def _button(master: ctk.CTkFrame, text: str, width: int, command: object) -> ctk.CTkButton:
-        return ctk.CTkButton(
+    def _button(master: ctk.CTkFrame, text: str, width: int, command: Callable[[], None], tip: str) -> ctk.CTkButton:
+        button = ctk.CTkButton(
             master, text=text, width=width, height=28, command=command, font=theme.font(theme.SIZE_SMALL),
             fg_color=theme.CARD_ELEVATED, hover_color=theme.BORDER, text_color=theme.TEXT,
             corner_radius=theme.RADIUS_BUTTON,
         )
+        Tooltip(button, tip)
+        return button
 
     # ----- public API ----------------------------------------------------------
 
@@ -338,6 +351,7 @@ class TreeCanvas(ctk.CTkFrame):
         code = (theme.code_family(), -max(6, round(FONT_SIZE * z)), "bold")
 
         def rect(box: NodeBox) -> tuple[float, float, float, float]:
+            """Screen rectangle of ``box`` at the current zoom and offset."""
             return offset + box.x * z, box.y * z, offset + (box.x + box.width) * z, (box.y + box.height) * z
 
         # Every item carries an "a<id>" tag per ancestor (itself included) to highlight subtrees.
@@ -410,7 +424,7 @@ class TreeCanvas(ctk.CTkFrame):
                 file.write(self._tree.to_ascii(self._show_epsilon.get()) + "\n")
 
 
-def _rounded_rect(canvas: tk.Canvas, x0: float, y0: float, x1: float, y1: float, r: float, **kwargs) -> int:
+def _rounded_rect(canvas: tk.Canvas, x0: float, y0: float, x1: float, y1: float, r: float, **kwargs: Any) -> int:
     """Draw a rounded rectangle as a smoothed polygon (Tk has no native one)."""
     r = min(r, (x1 - x0) / 2, (y1 - y0) / 2)
     points = (x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1,

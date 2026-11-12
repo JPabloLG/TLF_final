@@ -216,6 +216,7 @@ def compute_first_follow() -> tuple[dict[str, frozenset[str]], dict[str, frozens
     follow[START_SYMBOL].add(END_MARKER)
 
     def first_of(sequence: tuple[str, ...]) -> set[str]:
+        """FIRST of a symbol sequence with the current approximation of ``first``."""
         result: set[str] = set()
         for symbol in sequence:
             if symbol not in non_terminals:

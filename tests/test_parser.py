@@ -124,6 +124,7 @@ class ParserValidTests(unittest.TestCase):
     """Strings in L(G): tree frontier, leftmost derivation and invariants."""
 
     def assert_valid(self, text: str) -> None:
+        """Assert ``text`` is accepted and its tree and derivation keep the invariants."""
         tokens = read_tokens(text)
         result = analyze(tokens)
         self.assertTrue(result.ok, result.error)
@@ -161,6 +162,7 @@ class ParserErrorTests(unittest.TestCase):
     """Strings outside L(G): exact position, found symbol, expected set and non-terminal."""
 
     def assert_error(self, tokens: list[str], position: int, found: str, expected: set[str], nonterminal: str) -> None:
+        """Assert ``tokens`` fail with exactly this position, found symbol, expected set and non-terminal."""
         with self.assertRaises(AsmSyntaxError) as ctx:
             RecursiveDescentParser(tokens).parse()
         error = ctx.exception
@@ -198,6 +200,16 @@ class ParserErrorTests(unittest.TestCase):
         for tokens, *expected in cases:
             with self.subTest(tokens=tokens):
                 self.assert_error(tokens, *expected)
+
+
+class PerformanceTests(unittest.TestCase):
+    """The parser is linear: a 200-instruction program is analyzed well under one second."""
+
+    def test_200_instructions(self) -> None:
+        tokens = ("inicio : " + "MOV RAX , [ RBX + RCX * 4 + 0x10 ] ADD [ RSP ] , - 1 " * 100 + "JMP inicio").split()
+        result = analyze(tokens)
+        self.assertTrue(result.ok, result.error)
+        self.assertLess(result.elapsed_ms, 1000)
 
 
 if __name__ == "__main__":

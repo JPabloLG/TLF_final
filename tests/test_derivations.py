@@ -120,6 +120,7 @@ class SemanticTests(unittest.TestCase):
     """Effective-address summaries and architecture warnings."""
 
     def summaries(self, text: str) -> list[str]:
+        """Effective-address summary of each memory operand of ``text``."""
         return [effective_address_summary(mem) for mem in memory_operands(parse(text))]
 
     def test_summaries(self) -> None:
@@ -152,6 +153,7 @@ class CliTests(unittest.TestCase):
     """Exit codes of main.py."""
 
     def run_main(self, *argv: str) -> int:
+        """Run main.py with ``argv`` silencing its output; return the exit code."""
         with contextlib.redirect_stdout(io.StringIO()):
             return main(list(argv))
 
