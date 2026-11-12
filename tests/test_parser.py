@@ -6,6 +6,7 @@ from analyzer import grammar
 from analyzer.errors import AsmSyntaxError
 from analyzer.input_reader import InputFormatError, read_tokens
 from analyzer.parse_tree import Node
+from analyzer.parser import RecursiveDescentParser, analyze
 
 
 class GrammarTests(unittest.TestCase):
@@ -111,6 +112,92 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(tree.count_nonterminals(), 5)
         self.assertEqual(len({n.id for n in tree.iter_preorder()}), 8)
         self.assertEqual(tree.to_dict()["children"][0]["rule"], "R5")
+
+
+W1 = "inicio : MOV RAX , [ RBX + RCX * 4 + 0x10 ] JMP inicio"
+W2 = "CMP [ RBP - 8 ] , - 1 JMP [ RSP + RDI * 8 ]"
+W_A = "MOV RAX , [ RBP - 8 + 4 ]"
+REG_NUM_MINUS = grammar.ALL_REGISTERS | {"num", "-"}
+
+
+class ParserValidTests(unittest.TestCase):
+    """Strings in L(G): tree frontier, leftmost derivation and invariants."""
+
+    def assert_valid(self, text: str) -> None:
+        tokens = read_tokens(text)
+        result = analyze(tokens)
+        self.assertTrue(result.ok, result.error)
+        self.assertIsNone(result.error)
+        self.assertEqual(result.tree.frontier(), tokens)
+        shown = [
+            leaf.lexeme if leaf.symbol in grammar.TERMINAL_CLASSES else leaf.symbol
+            for leaf in result.tree.leaves() if not leaf.is_epsilon
+        ]
+        self.assertEqual(shown, [t.upper() if t.upper() in grammar.RESERVED_WORDS else t for t in tokens])
+        self.assertEqual(len(result.applied_rules), result.tree.count_nonterminals())
+
+    def test_reference_strings(self) -> None:
+        for text in (W1, W2, W_A, "mov rax , 5", "MOV RAX , [ RAX + 4 ]"):
+            with self.subTest(text=text):
+                self.assert_valid(text)
+
+    def test_w1_leftmost_derivation(self) -> None:
+        expected = (
+            "R1 R4 R2 R5 R6 R8 R11 R34 R36 R14 R23 R24 R28 R36 R32 R25 R28 R36 R31 R33 "
+            "R25 R30 R27 R2 R5 R7 R20 R3"
+        ).split()
+        self.assertEqual(len(expected), 28)
+        self.assertEqual(analyze(read_tokens(W1)).applied_rules, expected)
+
+    def test_tree_labels(self) -> None:
+        tree = RecursiveDescentParser(read_tokens("mov rax , [ rax + 4 ]")).parse()
+        leaves = [leaf for leaf in tree.leaves() if not leaf.is_epsilon]
+        self.assertEqual([leaf.symbol for leaf in leaves], ["MOV", "RAX", ",", "[", "RAX", "+", "num", "]"])
+        self.assertEqual(leaves[6].lexeme, "4")
+        self.assertEqual([leaf.position for leaf in leaves], list(range(1, 9)))
+
+
+class ParserErrorTests(unittest.TestCase):
+    """Strings outside L(G): exact position, found symbol, expected set and non-terminal."""
+
+    def assert_error(self, tokens: list[str], position: int, found: str, expected: set[str], nonterminal: str) -> None:
+        with self.assertRaises(AsmSyntaxError) as ctx:
+            RecursiveDescentParser(tokens).parse()
+        error = ctx.exception
+        self.assertEqual(
+            (error.position, error.found, set(error.expected), error.nonterminal),
+            (position, found, set(expected), nonterminal),
+        )
+        result = analyze(tokens)
+        self.assertFalse(result.ok)
+        self.assertIsNone(result.tree)
+
+    def test_w3(self) -> None:
+        self.assert_error(read_tokens("MOV [ RAX ] , [ RBX ]"), 6, "[", REG_NUM_MINUS, "FMEM")
+
+    def test_grammar_md_invalid_strings(self) -> None:
+        cases = (
+            ("MOV 5 , RAX", 2, "5", grammar.FIRST["OPS"], "OPS"),
+            ("MOV RAX , [ RAX + RSP * 4 ]", 8, "*", {"+", "-", "]"}, "EXP'"),
+            ("ADD RAX , [ RBX * 3 ]", 7, "3", grammar.SCALES, "ESCALA"),
+            ("JMP", 2, "$", grammar.FIRST["DEST"], "DEST"),
+        )
+        for text, *expected in cases:
+            with self.subTest(text=text):
+                self.assert_error(read_tokens(text), *expected)
+
+    def test_edge_cases(self) -> None:
+        sent_or_end = grammar.FIRST["SENT"] | {"$"}
+        cases = (
+            ([], 1, "$", grammar.FIRST["SENT"], "PROG"),
+            (read_tokens("MOV :"), 2, ":", grammar.FIRST["OPS"], "OPS"),
+            (read_tokens("MOV RAX , 5 basura"), 6, "$", {":"}, "SENT"),
+            (read_tokens("MOV RAX , 5 ]"), 5, "]", sent_or_end, "RESTO"),
+            (read_tokens("MOV RAX, 5"), 2, "RAX,", grammar.FIRST["OPS"], "OPS"),
+        )
+        for tokens, *expected in cases:
+            with self.subTest(tokens=tokens):
+                self.assert_error(tokens, *expected)
 
 
 if __name__ == "__main__":
