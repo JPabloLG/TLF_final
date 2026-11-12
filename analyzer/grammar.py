@@ -150,6 +150,23 @@ PRODUCTIONS: tuple[Production, ...] = (
     *_family("R37", "PILA", _STACK_ORDER, "Registro de pila concreto"),
 )
 
+@dataclass(frozen=True)
+class ReferenceString:
+    """A reference string from the table in GRAMMAR.md, written with space-separated terminals."""
+
+    name: str
+    text: str
+    valid: bool
+
+
+REFERENCE_STRINGS: tuple[ReferenceString, ...] = (
+    ReferenceString("w1", "inicio : MOV RAX , [ RBX + RCX * 4 + 0x10 ] JMP inicio", True),
+    ReferenceString("w2", "CMP [ RBP - 8 ] , - 1 JMP [ RSP + RDI * 8 ]", True),
+    ReferenceString("w_a", "MOV RAX , [ RBP - 8 + 4 ]", True),
+    ReferenceString("w3", "MOV [ RAX ] , [ RBX ]", False),
+)
+
+
 _SIGMA_REG: frozenset[str] = ALL_REGISTERS
 _PROG_FIRST: frozenset[str] = frozenset({"id"}) | MNEMONICS
 _EXP_FIRST: frozenset[str] = _SIGMA_REG | {"num"}

@@ -12,16 +12,11 @@ import argparse
 import sys
 
 from analyzer.derivations import format_derivation, leftmost_derivation, rightmost_derivation
+from analyzer.grammar import REFERENCE_STRINGS
 from analyzer.input_reader import InputFormatError, read_tokens
 from analyzer.parser import analyze
 from analyzer.semantic import effective_address_summary, memory_operands, operand_text, semantic_warnings
 
-EXAMPLES: tuple[tuple[str, str], ...] = (
-    ("w1", "inicio : MOV RAX , [ RBX + RCX * 4 + 0x10 ] JMP inicio"),
-    ("w2", "CMP [ RBP - 8 ] , - 1 JMP [ RSP + RDI * 8 ]"),
-    ("w_a", "MOV RAX , [ RBP - 8 + 4 ]"),
-    ("w3", "MOV [ RAX ] , [ RBX ]"),
-)
 SEPARATOR = "═" * 70
 
 
@@ -64,11 +59,11 @@ def report(tokens: list[str], mode: str) -> bool:
 
 
 def launch_gui() -> int:
-    """Open the graphical interface; returns 1 with a notice if it is not built yet."""
+    """Open the graphical interface; returns 1 with a notice if customtkinter is not installed."""
     try:
         from analyzer.gui.app import main as gui_main
     except ImportError:
-        print("La interfaz gráfica todavía no está disponible: se construye en la Etapa 4. Usa --cli, --list o --examples.")
+        print("No se pudo abrir la interfaz gráfica: instala las dependencias con 'pip install -r requirements.txt'.")
         return 1
     gui_main()
     return 0
@@ -96,9 +91,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.examples:
-        for name, text in EXAMPLES:
-            print(f"{SEPARATOR}\n{name}: {text}\n{SEPARATOR}")
-            report(read_tokens(text), args.mode)
+        for example in REFERENCE_STRINGS:
+            print(f"{SEPARATOR}\n{example.name}: {example.text}\n{SEPARATOR}")
+            report(example.text.split(), args.mode)
             print()
         return 0
     if args.cli is None and args.list is None:
